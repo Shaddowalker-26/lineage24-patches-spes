@@ -1,0 +1,665 @@
+diff --git a/core/java/android/app/IActivityManager.aidl b/core/java/android/app/IActivityManager.aidl
+index 8703ccbea576..6e0f1af85a19 100644
+--- a/core/java/android/app/IActivityManager.aidl
++++ b/core/java/android/app/IActivityManager.aidl
+@@ -978,6 +978,17 @@ interface IActivityManager {
+ 
+     int checkPermissionForDevice(in String permission, int pid, int uid, int deviceId);
+ 
++    /**
++
++     *  Force full screen for devices with cutout
++     */
++    boolean shouldForceCutoutFullscreen(in String packageName);
++
++    /**
++     *  Should disable touch if three fingers to screen shot is active?
++     */
++    boolean isSwipeToScreenshotGestureActive();
++
+     /**
+      * Notify AMS about binder transactions to frozen apps.
+      *
+diff --git a/core/java/android/provider/Settings.java b/core/java/android/provider/Settings.java
+index 090c41d92bc7..c612810a6266 100644
+--- a/core/java/android/provider/Settings.java
++++ b/core/java/android/provider/Settings.java
+@@ -6906,6 +6906,30 @@ public final class Settings {
+         public static final String[] LEGACY_RESTORE_SETTINGS = {
+         };
+ 
++        /**
++         * Whether to enable smart 5G mode
++         * @hide
++         */
++        public static final String SMART_5G = "smart_5g";
++
++       /**
++         * Whether or not volume button music controls should be enabled to seek media tracks
++         * @hide
++         */
++        public static final String VOLBTN_MUSIC_CONTROLS = "volbtn_music_controls";
++
++        /**
++         * Whether to take partial screenshot with volume down + power click.
++         * @hide
++	 */
++        public static final String CLICK_PARTIAL_SCREENSHOT = "click_partial_screenshot";
++
++        /**
++         * Three Finger Gesture from Oppo
++         * @hide
++         */
++        public static final String THREE_FINGER_GESTURE = "three_finger_gesture";
++
+         /**
+          * These are all public system settings
+          *
+@@ -20739,6 +20763,13 @@ public final class Settings {
+          */
+         public static final String RESTRICTED_NETWORKING_MODE = "restricted_networking_mode";
+ 
++	/**
++         * Control whether FLAG_SECURE is ignored for all windows.
++         * @hide
++         */
++        @Readable
++        public static final String WINDOW_IGNORE_SECURE = "window_ignore_secure";
++
+         /**
+          * Setting indicating whether Low Power Standby is enabled, if supported.
+          *
+diff --git a/core/java/android/view/ViewRootImpl.java b/core/java/android/view/ViewRootImpl.java
+index 62bd3e12bc39..56757a6cf663 100644
+--- a/core/java/android/view/ViewRootImpl.java
++++ b/core/java/android/view/ViewRootImpl.java
+@@ -8793,6 +8793,11 @@ public final class ViewRootImpl implements ViewParent,
+                 mLastClickToolType = event.getToolType(event.getActionIndex());
+             }
+ 
++            if (event.getPointerCount() == 3 && isSwipeToScreenshotGestureActive()) {
++                event.setAction(MotionEvent.ACTION_CANCEL);
++                Log.d("SwipeToScreenShot", "canceling motionEvent because of threeGesture detecting");
++            }
++
+             mAttachInfo.mUnbufferedDispatchRequested = false;
+             mAttachInfo.mHandlingPointerEvent = true;
+             // If the event was fully handled by the handwriting initiator, then don't dispatch it
+@@ -14699,6 +14704,16 @@ public final class ViewRootImpl implements ViewParent,
+                     ? infrequentUpdateCount : infrequentUpdateCount + 1;
+         } else {
+             mInfrequentUpdateCount = 0;
++
++        }
++    }
++
++    private boolean isSwipeToScreenshotGestureActive() {
++        try {
++            return ActivityManager.getService().isSwipeToScreenshotGestureActive();
++        } catch (RemoteException e) {
++            Log.e("SwipeToScreenshot", "isSwipeToScreenshotGestureActive exception", e);
++            return false;
+         }
+     }
+ 
+diff --git a/core/java/android/view/Window.java b/core/java/android/view/Window.java
+index 363af7fe8909..d282811c6c4a 100644
+--- a/core/java/android/view/Window.java
++++ b/core/java/android/view/Window.java
+@@ -20,6 +20,7 @@ import static android.Manifest.permission.HIDE_NON_SYSTEM_OVERLAY_WINDOWS;
+ import static android.Manifest.permission.HIDE_OVERLAY_WINDOWS;
+ import static android.content.pm.PackageManager.PERMISSION_GRANTED;
+ import static android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
++import static android.view.WindowManager.LayoutParams.FLAG_SECURE;
+ import static android.view.WindowManager.LayoutParams.SYSTEM_FLAG_HIDE_NON_SYSTEM_OVERLAY_WINDOWS;
+ 
+ import android.annotation.ColorInt;
+@@ -53,6 +54,7 @@ import android.os.Build;
+ import android.os.Bundle;
+ import android.os.Handler;
+ import android.os.IBinder;
++import android.provider.Settings;
+ import android.transition.Scene;
+ import android.transition.Transition;
+ import android.transition.TransitionManager;
+@@ -1366,6 +1368,10 @@ public abstract class Window {
+      * @see #clearFlags
+      */
+     public void setFlags(int flags, int mask) {
++        if ((mask & FLAG_SECURE) != 0 && Settings.Global.getInt(mContext.getContentResolver(),
++                Settings.Global.WINDOW_IGNORE_SECURE, 0) == 1) {
++            mask &= ~FLAG_SECURE;
++        }
+         final WindowManager.LayoutParams attrs = getAttributes();
+         attrs.flags = (attrs.flags&~mask) | (flags&mask);
+         mForcedWindowFlags |= mask;
+diff --git a/packages/SystemUI/res/drawable/ic_qs_volume_panel.xml b/packages/SystemUI/res/drawable/ic_qs_volume_panel.xml
+new file mode 100644
+index 000000000000..e7c51d2a61ca
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/ic_qs_volume_panel.xml
+@@ -0,0 +1,27 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++    Copyright (c) 2015 The CyanogenMod Project
++    Copyright (c) 2017 The LineageOS Project
++
++    Licensed under the Apache License, Version 2.0 (the "License");
++    you may not use this file except in compliance with the License.
++    You may obtain a copy of the License at
++
++        http://www.apache.org/licenses/LICENSE-2.0
++
++    Unless required by applicable law or agreed to in writing, software
++    distributed under the License is distributed on an "AS IS" BASIS,
++    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++    See the License for the specific language governing permissions and
++    limitations under the License.
++-->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++        android:width="64dp"
++        android:height="64dp"
++        android:viewportWidth="24"
++        android:viewportHeight="24">
++
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M3,10v4c0,0.55,0.45,1,1,1h3l3.29,3.29c0.63,0.63,1.71,0.18,1.71-0.71V6.41c0-0.89-1.08-1.34-1.71-0.71L7,9H4 C3.45,9,3,9.45,3,10z M16.5,12c0-1.77-1.02-3.29-2.5-4.03v8.05C15.48,15.29,16.5,13.77,16.5,12z M14,4.45v0.2 c0,0.38,0.25,0.71,0.6,0.85C17.18,6.53,19,9.06,19,12s-1.82,5.47-4.4,6.5c-0.36,0.14-0.6,0.47-0.6,0.85v0.2 c0,0.63,0.63,1.07,1.21,0.85C18.6,19.11,21,15.84,21,12s-2.4-7.11-5.79-8.4C14.63,3.37,14,3.82,14,4.45z"/>
++</vector>
+diff --git a/packages/SystemUI/res/values/config.xml b/packages/SystemUI/res/values/config.xml
+index 140bb805af52..7462922c444a 100644
+--- a/packages/SystemUI/res/values/config.xml
++++ b/packages/SystemUI/res/values/config.xml
+@@ -107,7 +107,7 @@
+ 
+     <!-- Tiles native to System UI. Order should match "quick_settings_tiles_default" -->
+     <string name="quick_settings_tiles_stock" translatable="false">
+-        internet,wifi,bt,flashlight,dnd,modes_dnd,alarm,airplane,nfc,controls,wallet,rotation,battery,cast,screenrecord,mictoggle,cameratoggle,location,hotspot,inversion,saver,dark,work,night,reverse,reduce_brightness,qr_code_scanner,onehanded,color_correction,font_scaling,record_issue,hearing_devices,notes,desktopeffects,cell,ambient_display,aod,caffeine,heads_up,powershare,profiles,reading_mode,sync,usb_tether,vpn
++        internet,wifi,bt,flashlight,dnd,modes_dnd,alarm,airplane,nfc,controls,wallet,rotation,battery,cast,screenrecord,mictoggle,cameratoggle,location,hotspot,inversion,saver,dark,work,night,reverse,reduce_brightness,qr_code_scanner,onehanded,color_correction,font_scaling,record_issue,hearing_devices,notes,desktopeffects,cell,ambient_display,aod,caffeine,heads_up,powershare,profiles,reading_mode,sync,usb_tether,vpn,volume_panel
+     </string>
+ 
+     <!-- The tiles to display in QuickSettings -->
+diff --git a/packages/SystemUI/res/values/strings.xml b/packages/SystemUI/res/values/strings.xml
+index d025a3ff3a9d..7cde4d651c80 100644
+--- a/packages/SystemUI/res/values/strings.xml
++++ b/packages/SystemUI/res/values/strings.xml
+@@ -5062,4 +5062,5 @@
+     <!-- Accessibility label for the thumbs down button on attribution dialog. [CHAR_LIMIT=NONE] -->
+     <string name="ace_attribution_thumbs_down_button_accessibility_description">Thumbs down feedback button</string>
+ 
++    <string name="quick_settings_volume_panel_label">Volume panel</string>
+ </resources>
+diff --git a/packages/SystemUI/src/com/android/systemui/lineage/LineageModule.kt b/packages/SystemUI/src/com/android/systemui/lineage/LineageModule.kt
+index 5a0cb1013d88..0ad1d0ecf6b3 100644
+--- a/packages/SystemUI/src/com/android/systemui/lineage/LineageModule.kt
++++ b/packages/SystemUI/src/com/android/systemui/lineage/LineageModule.kt
+@@ -29,6 +29,7 @@ import com.android.systemui.qs.tiles.ProfilesTile
+ import com.android.systemui.qs.tiles.ReadingModeTile
+ import com.android.systemui.qs.tiles.SyncTile
+ import com.android.systemui.qs.tiles.UsbTetherTile
++import com.android.systemui.qs.tiles.VolumeTile
+ import com.android.systemui.qs.tiles.VpnTile
+ import com.android.systemui.qs.tiles.base.shared.model.QSTileConfig
+ import com.android.systemui.qs.tiles.base.shared.model.QSTileUIConfig
+@@ -96,6 +97,12 @@ interface LineageModule {
+     @StringKey(UsbTetherTile.TILE_SPEC)
+     fun bindUsbTetherTile(usbTetherTile: UsbTetherTile): QSTileImpl<*>
+ 
++    /** Inject VolumeTile into tileMap in QSModule */
++    @Binds
++    @IntoMap
++    @StringKey(VolumeTile.TILE_SPEC)
++    fun bindVolumeTile(volumeTile: VolumeTile): QSTileImpl<*>
++
+     /** Inject VpnTile into tileMap in QSModule */
+     @Binds
+     @IntoMap
+@@ -249,6 +256,21 @@ interface LineageModule {
+                 category = TileCategory.CONNECTIVITY,
+             )
+ 
++        @Provides
++        @IntoMap
++        @StringKey(VolumeTile.TILE_SPEC)
++        fun provideVolumeTile(uiEventLogger: QsEventLogger): QSTileConfig =
++            QSTileConfig(
++                tileSpec = TileSpec.create(VolumeTile.TILE_SPEC),
++                uiConfig =
++                    QSTileUIConfig.Resource(
++                        iconRes = R.drawable.ic_qs_volume_panel,
++                        labelRes = R.string.quick_settings_volume_panel_label
++                    ),
++                instanceId = uiEventLogger.getNewInstanceId(),
++                category = TileCategory.UTILITIES,
++            )
++
+         @Provides
+         @IntoMap
+         @StringKey(VPN_TILE_SPEC)
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/tiles/VolumeTile.java b/packages/SystemUI/src/com/android/systemui/qs/tiles/VolumeTile.java
+new file mode 100644
+index 000000000000..ad0248b25f64
+--- /dev/null
++++ b/packages/SystemUI/src/com/android/systemui/qs/tiles/VolumeTile.java
+@@ -0,0 +1,107 @@
++/*
++ * Copyright (C) 2015 The CyanogenMod Project
++ * Copyright (C) 2017 The LineageOS Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.systemui.qs.tiles;
++
++import android.content.Context;
++import android.content.Intent;
++import android.os.Handler;
++import android.os.Looper;
++import android.media.AudioManager;
++import android.provider.Settings;
++import android.service.quicksettings.Tile;
++
++import androidx.annotation.Nullable;
++
++import com.android.internal.logging.MetricsLogger;
++import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
++import com.android.systemui.animation.Expandable;
++import com.android.systemui.dagger.qualifiers.Background;
++import com.android.systemui.dagger.qualifiers.Main;
++import com.android.systemui.plugins.ActivityStarter;
++import com.android.systemui.plugins.FalsingManager;
++import com.android.systemui.plugins.qs.QSTile.BooleanState;
++import com.android.systemui.plugins.statusbar.StatusBarStateController;
++import com.android.systemui.qs.QsEventLogger;
++import com.android.systemui.qs.QSHost;
++import com.android.systemui.qs.logging.QSLogger;
++import com.android.systemui.qs.tileimpl.QSTileImpl;
++import com.android.systemui.res.R;
++import static com.android.internal.logging.MetricsLogger.VIEW_UNKNOWN;
++
++import javax.inject.Inject;
++
++public class VolumeTile extends QSTileImpl<BooleanState> {
++
++    public static final String TILE_SPEC = "volume_panel";
++
++    private static final Intent SOUND_SETTINGS = new Intent(Settings.Panel.ACTION_VOLUME);
++
++    @Inject
++    public VolumeTile(
++            QSHost host,
++            QsEventLogger uiEventLogger,
++            @Background Looper backgroundLooper,
++            @Main Handler mainHandler,
++            FalsingManager falsingManager,
++            MetricsLogger metricsLogger,
++            StatusBarStateController statusBarStateController,
++            ActivityStarter activityStarter,
++            QSLogger qsLogger
++    ) {
++        super(host, uiEventLogger, backgroundLooper, mainHandler, falsingManager, metricsLogger,
++                statusBarStateController, activityStarter, qsLogger);
++    }
++
++    @Override
++    protected void handleClick(@Nullable Expandable expandable) {
++        AudioManager am = mContext.getSystemService(AudioManager.class);
++        am.adjustVolume(AudioManager.ADJUST_SAME, AudioManager.FLAG_SHOW_UI);
++    }
++
++    @Override
++    public Intent getLongClickIntent() {
++        return SOUND_SETTINGS;
++    }
++
++    @Override
++    protected void handleUpdateState(BooleanState state, Object arg) {
++        state.label = mContext.getString(R.string.quick_settings_volume_panel_label);
++        state.icon = ResourceIcon.get(R.drawable.ic_qs_volume_panel); // TODO needs own icon
++        state.state = Tile.STATE_ACTIVE;
++    }
++
++    @Override
++    public CharSequence getTileLabel() {
++        return mContext.getString(R.string.quick_settings_volume_panel_label);
++    }
++
++    @Override
++    public int getMetricsCategory() {
++        return VIEW_UNKNOWN;
++    }
++
++    @Override
++    public BooleanState newTileState() {
++        return new BooleanState();
++    }
++
++    @Override
++    public void handleSetListening(boolean listening) {
++        // Do nothing
++    }
++}
+diff --git a/services/core/java/com/android/server/am/ActivityManagerService.java b/services/core/java/com/android/server/am/ActivityManagerService.java
+index e63c7c7b97b5..d8a74af3b8cf 100644
+--- a/services/core/java/com/android/server/am/ActivityManagerService.java
++++ b/services/core/java/com/android/server/am/ActivityManagerService.java
+@@ -913,6 +913,11 @@ public class ActivityManagerService extends IActivityManager.Stub
+         sThreadPriorityBooster.reset();
+     }
+ 
++   @Override
++   public boolean shouldForceCutoutFullscreen(String packageName) {
++        return false;
++    }
++
+     private static ThreadPriorityBooster sProcThreadPriorityBooster = new ThreadPriorityBooster(
+             THREAD_PRIORITY_FOREGROUND, LockGuard.INDEX_PROC);
+ 
+@@ -1782,6 +1787,10 @@ public class ActivityManagerService extends IActivityManager.Stub
+ 
+     static final HostingRecord sNullHostingRecord =
+             new HostingRecord(HostingRecord.HOSTING_TYPE_EMPTY);
++
++    final SwipeToScreenshotObserver mSwipeToScreenshotObserver;
++    private boolean mIsSwipeToScreenshotEnabled;
++
+     /**
+      * Used to notify activity lifecycle events.
+      */
+@@ -2633,6 +2642,7 @@ public class ActivityManagerService extends IActivityManager.Stub
+         mApplicationSharedMemoryReadOnlyFd = null;
+         sCreatorTokenCacheCleaner = new Handler(mHandlerThread.getLooper());
+         mMemoryLimiter = MemoryLimiter.getDefaultMemoryLimiter(mContext);
++        mSwipeToScreenshotObserver = null;
+     }
+ 
+     // Note: This method is invoked on the main thread but may need to attach various
+@@ -2768,6 +2778,7 @@ public class ActivityManagerService extends IActivityManager.Stub
+             Slog.e(TAG, "Failed to get read only fd for shared memory", e);
+             throw new RuntimeException(e);
+         }
++        mSwipeToScreenshotObserver = new SwipeToScreenshotObserver(mHandler, mContext);
+     }
+ 
+     void setBroadcastQueueForTest(BroadcastQueue broadcastQueue) {
+@@ -9662,9 +9673,12 @@ public class ActivityManagerService extends IActivityManager.Stub
+                     com.android.internal.R.bool
+                             .config_hideUserSwitchingUiDuringSetup);
+             mUserController.setInitialConfig(userSwitchUiEnabled, maxRunningUsers,
++
+                     delayUserDataLocking, backgroundUserConsideredDispensableTimeSecs,
+                     skipKeyguardWhenSwitchingToUnlockedUsers,
+                     hideUserSwitchingUiDuringSetup);
++
++            mSwipeToScreenshotObserver.registerObserver();
+         }
+         mAppErrors.loadAppsNotReportingCrashesFromConfig(res.getString(
+                 com.android.internal.R.string.config_appsNotReportingCrashes));
+@@ -20920,6 +20934,39 @@ public class ActivityManagerService extends IActivityManager.Stub
+         }
+     }
+ 
++    private class SwipeToScreenshotObserver extends ContentObserver {
++
++        private final Context mContext;
++
++        public SwipeToScreenshotObserver(Handler handler, Context context) {
++            super(handler);
++            mContext = context;
++        }
++
++        public void registerObserver() {
++            mContext.getContentResolver().registerContentObserver(
++                    Settings.System.getUriFor(Settings.System.THREE_FINGER_GESTURE),
++                    false, this, UserHandle.USER_ALL);
++            update();
++        }
++
++        private void update() {
++            mIsSwipeToScreenshotEnabled = Settings.System.getIntForUser(mContext.getContentResolver(),
++                    Settings.System.THREE_FINGER_GESTURE, 0, UserHandle.USER_CURRENT) == 1;
++        }
++
++        public void onChange(boolean selfChange) {
++            update();
++        }
++    }
++
++    @Override
++    public boolean isSwipeToScreenshotGestureActive() {
++        synchronized (this) {
++            return mIsSwipeToScreenshotEnabled && SystemProperties.getBoolean("sys.android.screenshot", false);
++        }
++    }
++
+     /**
+      * Deal with binder transactions to frozen apps.
+      *
+diff --git a/services/core/java/com/android/server/policy/PhoneWindowManager.java b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+index 20256d911340..1166b14d3497 100644
+--- a/services/core/java/com/android/server/policy/PhoneWindowManager.java
++++ b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+@@ -818,6 +818,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+     private boolean mLongSwipeDown;
+     private CameraAvailbilityListener mCameraAvailabilityListener;
+     private ScreenshotHelper mScreenshotHelper;
++    private SwipeToScreenshotListener mSwipeToScreenshot;
++    private boolean haveEnableGesture = false;
+ 
+     private class PolicyHandler extends Handler {
+ 
+@@ -1066,6 +1068,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+             resolver.registerContentObserver(LineageSettings.System.getUriFor(
+                     LineageSettings.System.VOLUME_ANSWER_CALL), false, this,
+                     UserHandle.USER_ALL);
++           resolver.registerContentObserver(Settings.System.getUriFor(
++                    Settings.System.THREE_FINGER_GESTURE), false, this,
++                    UserHandle.USER_ALL);
+             updateSettings();
+         }
+ 
+@@ -2652,6 +2657,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+ 
+         mHandler = new PolicyHandler(injector.getLooper());
+         mScreenshotHelper = new ScreenshotHelper(mContext);
++        mSwipeToScreenshot = new SwipeToScreenshotListener(mContext, () -> takeScreenshot(
++        TAKE_SCREENSHOT_FULLSCREEN, SCREENSHOT_KEY_OTHER));
+         mWakeGestureListener = new MyWakeGestureListener(mContext, mHandler);
+         mSettingsObserver = new SettingsObserver(mHandler);
+         mSettingsObserver.observe();
+@@ -3390,6 +3397,20 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+         mHandler.post(this::updateSettings);
+     }
+ 
++   private void enableSwipeThreeFingerGesture(boolean enable) {
++    if (enable) {
++        if (haveEnableGesture) return;
++        haveEnableGesture = true;
++        mWindowManagerFuncs.registerPointerEventListener(
++                mSwipeToScreenshot, DEFAULT_DISPLAY);
++    } else {
++        if (!haveEnableGesture) return;
++        haveEnableGesture = false;
++        mWindowManagerFuncs.unregisterPointerEventListener(
++                mSwipeToScreenshot, DEFAULT_DISPLAY);
++    }
++}
++
+     /**
+      * Update provider Setting values synchronously.
+      */
+@@ -3468,6 +3489,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+             mVolumeAnswerCall = (LineageSettings.System.getIntForUser(resolver,
+                     LineageSettings.System.VOLUME_ANSWER_CALL, 0, UserHandle.USER_CURRENT) == 1)
+                     && ((mDeviceHardwareWakeKeys & KEY_MASK_VOLUME) != 0);
++            // Three Finger Gesture
++boolean threeFingerGesture = Settings.System.getIntForUser(resolver,
++        Settings.System.THREE_FINGER_GESTURE, 0, UserHandle.USER_CURRENT) == 1;
++enableSwipeThreeFingerGesture(threeFingerGesture);
+ 
+             // Configure wake gesture.
+             boolean wakeGestureEnabledSetting = Settings.Secure.getIntForUser(resolver,
+diff --git a/services/core/java/com/android/server/policy/SwipeToScreenshotListener.java b/services/core/java/com/android/server/policy/SwipeToScreenshotListener.java
+new file mode 100644
+index 000000000000..8079638e47fe
+--- /dev/null
++++ b/services/core/java/com/android/server/policy/SwipeToScreenshotListener.java
+@@ -0,0 +1,148 @@
++/*
++ * Copyright (C) 2019 The PixelExperience Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.server.policy;
++
++import android.content.Context;
++import android.os.SystemProperties;
++import android.provider.Settings;
++import android.util.Log;
++import android.util.DisplayMetrics;
++import android.view.MotionEvent;
++import android.view.WindowManagerPolicyConstants.PointerEventListener;
++
++public class SwipeToScreenshotListener implements PointerEventListener {
++    private static final String TAG = "SwipeToScreenshotListener";
++    private static final int THREE_GESTURE_STATE_NONE = 0;
++    private static final int THREE_GESTURE_STATE_DETECTING = 1;
++    private static final int THREE_GESTURE_STATE_DETECTED_FALSE = 2;
++    private static final int THREE_GESTURE_STATE_DETECTED_TRUE = 3;
++    private static final int THREE_GESTURE_STATE_NO_DETECT = 4;
++    private boolean mBootCompleted;
++    private final Context mContext;
++    private boolean mDeviceProvisioned = false;
++    private final float[] mInitMotionY;
++    private final int[] mPointerIds;
++    private int mThreeGestureState = THREE_GESTURE_STATE_NONE;
++    private final int mThreeGestureThreshold;
++    private final int mThreshold;
++    private final Callbacks mCallbacks;
++    DisplayMetrics mDisplayMetrics;
++
++    public SwipeToScreenshotListener(Context context, Callbacks callbacks) {
++        mPointerIds = new int[3];
++        mInitMotionY = new float[3];
++        mContext = context;
++        mCallbacks = callbacks;
++        mDisplayMetrics = mContext.getResources().getDisplayMetrics();
++        mThreshold = (int) (50.0f * mDisplayMetrics.density);
++        mThreeGestureThreshold = mThreshold * 3;
++    }
++
++    @Override
++    public void onPointerEvent(MotionEvent event) {
++        if (!mBootCompleted) {
++            mBootCompleted = SystemProperties.getBoolean("sys.boot_completed", false);
++            return;
++        }
++        if (!mDeviceProvisioned) {
++            mDeviceProvisioned = Settings.Global.getInt(mContext.getContentResolver(),
++                Settings.Global.DEVICE_PROVISIONED, 0) != 0;
++            return;
++        }
++        if (event.getAction() == 0) {
++            changeThreeGestureState(THREE_GESTURE_STATE_NONE);
++        } else if (mThreeGestureState == THREE_GESTURE_STATE_NONE && event.getPointerCount() == 3) {
++            if (checkIsStartThreeGesture(event)) {
++                changeThreeGestureState(THREE_GESTURE_STATE_DETECTING);
++                for (int i = 0; i < 3; i++) {
++                    mPointerIds[i] = event.getPointerId(i);
++                    mInitMotionY[i] = event.getY(i);
++                }
++            } else {
++                changeThreeGestureState(THREE_GESTURE_STATE_NO_DETECT);
++            }
++        }
++        if (mThreeGestureState == THREE_GESTURE_STATE_DETECTING) {
++            if (event.getPointerCount() != 3) {
++                changeThreeGestureState(THREE_GESTURE_STATE_DETECTED_FALSE);
++                return;
++            }
++            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
++                float distance = 0.0f;
++                int i = 0;
++                while (i < 3) {
++                    int index = event.findPointerIndex(mPointerIds[i]);
++                    if (index < 0 || index >= 3) {
++                        changeThreeGestureState(THREE_GESTURE_STATE_DETECTED_FALSE);
++                        return;
++                    } else {
++                        distance += event.getY(index) - mInitMotionY[i];
++                        i++;
++                    }
++                }
++                if (distance >= ((float) mThreeGestureThreshold)) {
++                    changeThreeGestureState(THREE_GESTURE_STATE_DETECTED_TRUE);
++                    mCallbacks.onSwipeThreeFinger();
++                }
++            }
++        }
++    }
++
++    private void changeThreeGestureState(int state) {
++        if (mThreeGestureState != state){
++            mThreeGestureState = state;
++            boolean shouldEnableProp = mThreeGestureState == THREE_GESTURE_STATE_DETECTED_TRUE ||
++                mThreeGestureState == THREE_GESTURE_STATE_DETECTING;
++            try {
++                SystemProperties.set("sys.android.screenshot", shouldEnableProp ? "true" : "false");
++            } catch(Exception e) {
++                Log.e(TAG, "Exception when setprop", e);
++            }
++        }
++    }
++
++    private boolean checkIsStartThreeGesture(MotionEvent event) {
++        if (event.getEventTime() - event.getDownTime() > 500) {
++            return false;
++        }
++        int height = mDisplayMetrics.heightPixels;
++        int width = mDisplayMetrics.widthPixels;
++        float minX = Float.MAX_VALUE;
++        float maxX = Float.MIN_VALUE;
++        float minY = Float.MAX_VALUE;
++        float maxY = Float.MIN_VALUE;
++        for (int i = 0; i < event.getPointerCount(); i++) {
++            float x = event.getX(i);
++            float y = event.getY(i);
++            if (y > ((float) (height - mThreshold))) {
++                return false;
++            }
++            maxX = Math.max(maxX, x);
++            minX = Math.min(minX, x);
++            maxY = Math.max(maxY, y);
++            minY = Math.min(minY, y);
++        }
++        if (maxY - minY <= mDisplayMetrics.density * 150.0f) {
++            return maxX - minX <= ((float) Math.min(width, height));
++        }
++        return false;
++    }
++
++    interface Callbacks {
++        void onSwipeThreeFinger();
++    }
++}
