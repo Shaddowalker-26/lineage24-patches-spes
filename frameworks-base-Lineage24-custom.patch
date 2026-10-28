@@ -446,10 +446,10 @@ index e63c7c7b97b5..d8a74af3b8cf 100644
       * Deal with binder transactions to frozen apps.
       *
 diff --git a/services/core/java/com/android/server/policy/PhoneWindowManager.java b/services/core/java/com/android/server/policy/PhoneWindowManager.java
-index 20256d911340..1166b14d3497 100644
+index e17c6ae561d5..8151ed4b2946 100644
 --- a/services/core/java/com/android/server/policy/PhoneWindowManager.java
 +++ b/services/core/java/com/android/server/policy/PhoneWindowManager.java
-@@ -818,6 +818,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+@@ -819,6 +819,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
      private boolean mLongSwipeDown;
      private CameraAvailbilityListener mCameraAvailabilityListener;
      private ScreenshotHelper mScreenshotHelper;
@@ -458,7 +458,7 @@ index 20256d911340..1166b14d3497 100644
  
      private class PolicyHandler extends Handler {
  
-@@ -1066,6 +1068,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+@@ -1067,6 +1069,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
              resolver.registerContentObserver(LineageSettings.System.getUriFor(
                      LineageSettings.System.VOLUME_ANSWER_CALL), false, this,
                      UserHandle.USER_ALL);
@@ -468,7 +468,7 @@ index 20256d911340..1166b14d3497 100644
              updateSettings();
          }
  
-@@ -2652,6 +2657,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+@@ -2687,6 +2692,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
  
          mHandler = new PolicyHandler(injector.getLooper());
          mScreenshotHelper = new ScreenshotHelper(mContext);
@@ -477,7 +477,7 @@ index 20256d911340..1166b14d3497 100644
          mWakeGestureListener = new MyWakeGestureListener(mContext, mHandler);
          mSettingsObserver = new SettingsObserver(mHandler);
          mSettingsObserver.observe();
-@@ -3390,6 +3397,20 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+@@ -3427,6 +3434,20 @@ public class PhoneWindowManager implements WindowManagerPolicy {
          mHandler.post(this::updateSettings);
      }
  
@@ -498,7 +498,7 @@ index 20256d911340..1166b14d3497 100644
      /**
       * Update provider Setting values synchronously.
       */
-@@ -3468,6 +3489,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+@@ -3505,6 +3526,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
              mVolumeAnswerCall = (LineageSettings.System.getIntForUser(resolver,
                      LineageSettings.System.VOLUME_ANSWER_CALL, 0, UserHandle.USER_CURRENT) == 1)
                      && ((mDeviceHardwareWakeKeys & KEY_MASK_VOLUME) != 0);
