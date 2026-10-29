@@ -736,7 +736,7 @@ index 8b8d9ffa110..548458f8d6c 100644
 +    <string name="swipe_to_screenshot_summary">Swipe down with three fingers to take a screenshot</string>
  </resources>
 diff --git a/res/values/strings.xml b/res/values/strings.xml
-index a84186b96bc..b4ab312c28b 100644
+index a84186b96bc..4e4fe1d5318 100644
 --- a/res/values/strings.xml
 +++ b/res/values/strings.xml
 @@ -2886,6 +2886,15 @@
@@ -755,13 +755,16 @@ index a84186b96bc..b4ab312c28b 100644
      <!-- Summary for Wifi hotspot speed to 2.4 GHz band [CHAR LIMIT=NONE]-->
      <string name="wifi_hotspot_speed_summary_2g">2.4 GHz / Compatible with most devices</string>
      <!-- Summary for Wifi hotspot speed to 5 GHz band [CHAR LIMIT=NONE]-->
-@@ -15590,4 +15599,7 @@
+@@ -15590,4 +15599,10 @@
      <!-- Search keywords for Human interface device access setting -->
      <string name="keywords_access_hid">hid, human, access, device</string>
      <!-- Access HID end -->
 +
 +    <string name="ignore_window_secure_title">Ignore secure window restrictions</string>
 +    <string name="ignore_window_secure_summary">Allow screenshots and screen recording of secure windows</string>
++
++    <string name="three_finger_gesture">Three-finger gesture</string>
++    <string name="three_finger_gesture_summary">Swipe down with three fingers to take a screenshot</string>
  </resources>
 diff --git a/res/xml/gestures.xml b/res/xml/gestures.xml
 index 2b18c0cf06e..d42fcba373a 100644
